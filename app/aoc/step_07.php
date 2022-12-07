@@ -1054,10 +1054,12 @@ class File {
 
 class Directory {
 
-    public function __construct( public $name, public ?Directory $parent = null, public $directories = null,  public $files = null)
+    protected $entries;
+
+    public function __construct( public $name, ?Directory $parent = null)
     {
-        $this->directories ??= collect();
-        $this->files ??= collect();
+        $this->entries = collect();
+        if ($parent) $this->entries->put('..', $parent);
     }
 
     public function getSizeAttribute()
@@ -1078,7 +1080,7 @@ class Directory {
     public function addListing($parts)
     {
         if ($parts[0] == 'dir') {
-            $this->createSubDir($parts[1]);
+            $this->getCreateDirectory($parts[1]);
         } else {
             $size = intval($parts[0]);
             $fileName = $parts[1];
@@ -1088,23 +1090,25 @@ class Directory {
 
     public function createFile($name, $size)
     {
-        return $this->files->push(new File($name, $size));
+        return $this->entries->put($name, new File($name, $size));
     }
 
-    public function createSubDir($dirName){
+    public function getCreateDirectory($dirName){
+        if ($dir = $this->entries->get($dirName)) {
+            if ($dir instanceof Directory) {
+                return $dir;
+            } 
+            dd("an entry with name $dirName already exists", $this, $dir);
+        }
         $dir = new Directory($dirName, $this);
-        $this->directories->push($dir);
+        $this->entries->put($dirName, $dir);
         return $dir;
     }
 
     public function cd($dirName)
     {
-        if ($dirName == '..') return $this->parent;
         if ($dirName == '/' && $this->name == '/') return $this;
-        if ($dir = $this->directories->where('name', $dirName)->first()) {
-            return $dir;
-        }
-        return $this->createSubdir($dirName);
+        return $this->getCreateDirectory($dirName);
     }
 
     public function forEachDir(\Closure $closure)
@@ -1113,12 +1117,10 @@ class Directory {
         $this->directories->each(fn($d)=>$d->forEachDir($closure));
     }
 
-
-    public function getSubDirSizes($appendTo = null)
+    public function getSubDirSizes()
     {
-        $appendTo ??= collect();
-        $closure = fn($dir)=>$appendTo->put($dir->fullName, $dir->size);
-        $this->forEachDir($closure);
+        $appendTo = collect();
+        $this->forEachDir(fn($dir)=>$appendTo->put($dir->fullName, $dir->size));
         return $appendTo;
     }
 
@@ -1127,12 +1129,30 @@ class Directory {
         return $this->parent?->root ?? $this;
     }
 
+    public function getFilesAttribute()
+    {
+        return $this->entries->filter(fn($e)=>$e instanceOf File);
+    }
+
+    public function getDirectoriesAttribute()
+    {
+        return $this->entries->filter(fn($e)=>($e instanceOf Directory) && ($e != $this->parent));
+    }
+
+    public function getParentAttribute()
+    {
+        return $this->entries->get('..', null);
+    }
+
     public function __get($attribute)
     {
         $attributes = [
+            'files',
+            'directories',
             'size',
             'fullName',
-            'root'
+            'root',
+            'parent'
         ];
 
         if (in_array($attribute, $attributes)) {
@@ -1177,11 +1197,11 @@ $root = parseInput($input);
 $dirs = $root?->getSubDirSizes() ?? collect();
 
 $partADirs = $dirs->sort()->filter(fn($s)=>$s<=100000);
-$partA = [$partADirs, $partADirs->sum()];
+$partA = [$partADirs->sum()];
 
 $totalSpace = 70000000;
 $needed = 30000000;
-$totalSpaceUsed = $dirs['/'];
+$totalSpaceUsed = $dirs->get('/');
 $available = $totalSpace - $totalSpaceUsed;
 $missing = $available > $needed ? 0 : $needed - $available;
 
