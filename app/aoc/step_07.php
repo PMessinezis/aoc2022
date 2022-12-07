@@ -1107,19 +1107,32 @@ class Directory {
         return $this->createSubdir($dirName);
     }
 
+    public function forEachDir(\Closure $closure)
+    {
+        $closure($this);
+        $this->directories->each(fn($d)=>$d->forEachDir($closure));
+    }
+
+
     public function getSubDirSizes($appendTo = null)
     {
         $appendTo ??= collect();
-        $appendTo->put($this->fullName, $this->size);
-        $this->directories->each(fn($d)=>$d->getSubDirSizes($appendTo));
+        $closure = fn($dir)=>$appendTo->put($dir->fullName, $dir->size);
+        $this->forEachDir($closure);
         return $appendTo;
+    }
+
+    public function getRootAttribute()
+    {
+        return $this->parent?->root ?? $this;
     }
 
     public function __get($attribute)
     {
         $attributes = [
             'size',
-            'fullName'
+            'fullName',
+            'root'
         ];
 
         if (in_array($attribute, $attributes)) {
@@ -1132,10 +1145,10 @@ class Directory {
 }
 
 
-function parseInput($input, $root)
+function parseInput($input)
 {
     $commandIndicator = '$';
-    $currentDir = $root;
+    $currentDir = null;
     $lines = explode(PHP_EOL, $input);
     $mode = 'command';
     foreach ($lines as $line) {
@@ -1147,23 +1160,21 @@ function parseInput($input, $root)
             $command = $parts->shift();
             $args = $parts;
             match($command) {
-                'cd' => $currentDir = $currentDir->cd($args[0]),
+                'cd' => $currentDir = $currentDir ? $currentDir->cd($args[0]) : new Directory($args[0]),
                 'ls' => $mode = 'listing',
                 default => dd('unknown command ' . $command, $line, $parts)
             };
-        } elseif($mode == 'listing') {
+        } elseif($mode == 'listing' && $currentDir) {
             $currentDir->addListing($parts);
         } else {
-            dd('unkwnon state ' . $line, $parts);
+            dd('unkwnon state ', compact('line', 'parts', 'currentDir'));
         }
     }
-
+    return $currentDir?->root;
 }
 
-$root = new Directory('/');
-
-parseInput($input, $root);
-$dirs = $root->getSubDirSizes();
+$root = parseInput($input);
+$dirs = $root?->getSubDirSizes() ?? collect();
 
 $partADirs = $dirs->sort()->filter(fn($s)=>$s<=100000);
 $partA = [$partADirs, $partADirs->sum()];
@@ -1176,4 +1187,4 @@ $missing = $available > $needed ? 0 : $needed - $available;
 
 $partBDirs = $dirs->filter(fn($s)=>$s >= $missing)->sort();
 $partB = $partBDirs->take(1);
-ray(compact('partA', 'totalSpaceUsed', 'missing', 'partB'));
+dd(compact('partA', 'totalSpaceUsed', 'missing', 'partB'));
