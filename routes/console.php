@@ -16,13 +16,13 @@ use Illuminate\Support\Facades\Artisan;
 
 Artisan::command('aoc {id}', function ($id) {
     $id = substr(str($id)->padleft(2, '0'),-2);
-    $file = base_path("app/aoc/step_{$id}.php");
+    $file = base_path("app/aoc/day_{$id}.php");
     if (file_exists($file)) {
         include $file;
     } else {
         dd($file . ' does not exist !');
     }
-})->purpose('Execute a modul with path /app/aoc/step_{id}.php');
+})->purpose('Execute a modul with path /app/aoc/day_{id}.php');
 
 Artisan::command('run {path} {module}', function ($path, $module) {
     $module = basename($module, '.php');
